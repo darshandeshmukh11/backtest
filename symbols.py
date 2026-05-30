@@ -3,17 +3,16 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parents[1]
-_EOD_SWING = _ROOT / "eod-swing"
-if str(_EOD_SWING) not in sys.path:
-    sys.path.insert(0, str(_EOD_SWING))
+from data import get_nifty50_and_100_universe, get_nifty50_symbols
 
-from eod_swing_lib import get_nifty50_and_100_universe, get_nifty50_symbols  # noqa: E402
-
-NSE_CACHE_PATH = _ROOT / "paper-trade" / "data" / "nse_equity_symbols.json"
+_BACKTEST_ROOT = Path(__file__).resolve().parent
+_MONOREPO_ROOT = _BACKTEST_ROOT.parent
+NSE_CACHE_PATHS = [
+    _BACKTEST_ROOT / "data" / "nse_equity_symbols.json",
+    _MONOREPO_ROOT / "paper-trade" / "data" / "nse_equity_symbols.json",
+]
 
 POPULAR_NSE_SYMBOLS: list[str] = [
     "RELIANCE",
@@ -47,15 +46,17 @@ def normalize_symbol(symbol: str) -> str:
 
 
 def load_nse_equity_symbols() -> list[str]:
-    """All NSE EQ symbols from shared monorepo cache, else NIFTY union fallback."""
-    if NSE_CACHE_PATH.exists():
+    """All NSE EQ symbols from local/monorepo cache, else NIFTY union fallback."""
+    for cache_path in NSE_CACHE_PATHS:
+        if not cache_path.exists():
+            continue
         try:
-            payload = json.loads(NSE_CACHE_PATH.read_text(encoding="utf-8"))
+            payload = json.loads(cache_path.read_text(encoding="utf-8"))
             symbols = payload.get("symbols") or []
             if len(symbols) >= 100:
                 return sorted({normalize_symbol(s) for s in symbols})
         except Exception:
-            pass
+            continue
     try:
         all_syms, _ = get_nifty50_and_100_universe(prefer_live=False)
         if all_syms:

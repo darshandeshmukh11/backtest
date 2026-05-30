@@ -28,6 +28,8 @@ from symbols import (
 )
 from zones import add_zones, latest_zones
 
+DEPLOY_VERSION = "2026-05-30-self-contained"
+
 st.set_page_config(
     page_title="NSE Swing DSS",
     page_icon="📊",
@@ -343,6 +345,7 @@ def main() -> None:
         symbol = normalize_symbol(symbol)
         yahoo = resolve_yahoo_ticker(symbol)
         st.caption(f"Yahoo: **{yahoo}**")
+        st.caption(f"Build: `{DEPLOY_VERSION}`")
 
         st.divider()
         st.header("Parameters")

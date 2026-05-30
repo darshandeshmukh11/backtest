@@ -48,7 +48,7 @@ Adjust **Total holding** and **Swing tranche %** in the sidebar.
 |------|---------|
 | `app.py` | Streamlit UI |
 | `config.py` | Defaults (4460 shares, targets, periods) |
-| `data.py` | Yahoo OHLCV + fundamentals |
+| `data.py` | Yahoo OHLCV, fundamentals, EMA/RSI/S/R, NIFTY symbols (all-in-one, Cloud-safe) |
 | `indicators.py` | MA, RSI, VWAP, ATR, S/R |
 | `zones.py` | Buy/sell zone bands |
 | `signals.py` | Signals + swing-tranche simulation |
@@ -56,7 +56,7 @@ Adjust **Total holding** and **Swing tranche %** in the sidebar.
 | `backtest_engine.py` | Backtrader strategy |
 | `research.py` | Analyst narrative |
 
-Reuses `../eod-swing/eod_swing_lib.py` for Yahoo download and EMA/RSI/S/R helpers.
+All runtime files live in this folder — **`data.py` is self-contained** (no `eod_swing_lib` / `../eod-swing/`).
 
 ## Disclaimer
 

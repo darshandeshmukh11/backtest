@@ -1,19 +1,10 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 
-_ROOT = Path(__file__).resolve().parents[1]
-_EOD_SWING = _ROOT / "eod-swing"
-if str(_EOD_SWING) not in sys.path:
-    sys.path.insert(0, str(_EOD_SWING))
-
-from eod_swing_lib import compute_ema, compute_rsi, infer_support_resistance  # noqa: E402
-
 from config import DSSConfig
+from data import compute_ema, compute_rsi, infer_support_resistance
 
 
 def typical_price(df: pd.DataFrame) -> pd.Series:
