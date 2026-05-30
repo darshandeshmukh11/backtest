@@ -8,7 +8,7 @@ Decision support for swing-trading a **portion** of a delivery holding while kee
 - **Indicators:** EMA 20/50/200, RSI, rolling VWAP, ATR, volume vs 20d average
 - **Buy / sell zones** shaded on the chart (support–resistance + ATR bands)
 - **Historical buy/sell signals** and simulated swing-tranche P&L
-- **Indicator adherence** — which rules JINDALSTEL tended to follow over the sample
+- **Indicator adherence** — which rules the stock tended to follow over the sample
 - **[Backtrader](https://www.backtrader.com/)** capital backtest for independent validation
 - **Streamlit** dark-theme UI
 
@@ -32,7 +32,7 @@ streamlit run app.py
 | Layer | Default | Purpose |
 |-------|---------|---------|
 | Core | 4,014 shares (90%) | Never sold in simulation — delivery base |
-| Swing | 446 shares (10%) | Rotated on signals; rebuy dips to restore 4,460 |
+| Swing | 446 shares (10%) | Rotated on signals; rebuy dips to restore full lot |
 
 Adjust **Total holding** and **Swing tranche %** in the sidebar.
 
@@ -47,13 +47,14 @@ Adjust **Total holding** and **Swing tranche %** in the sidebar.
 | Path | Purpose |
 |------|---------|
 | `app.py` | Streamlit UI |
-| `jindalstel_dss/config.py` | Defaults (4460 shares, targets, periods) |
-| `jindalstel_dss/data.py` | Yahoo OHLCV + fundamentals |
-| `jindalstel_dss/indicators.py` | MA, RSI, VWAP, ATR, S/R |
-| `jindalstel_dss/zones.py` | Buy/sell zone bands |
-| `jindalstel_dss/signals.py` | Signals + swing-tranche simulation |
-| `jindalstel_dss/backtest_engine.py` | Backtrader strategy |
-| `jindalstel_dss/research.py` | Analyst narrative |
+| `config.py` | Defaults (4460 shares, targets, periods) |
+| `data.py` | Yahoo OHLCV + fundamentals |
+| `indicators.py` | MA, RSI, VWAP, ATR, S/R |
+| `zones.py` | Buy/sell zone bands |
+| `signals.py` | Signals + swing-tranche simulation |
+| `symbols.py` | NSE symbol picker |
+| `backtest_engine.py` | Backtrader strategy |
+| `research.py` | Analyst narrative |
 
 Reuses `../eod-swing/eod_swing_lib.py` for Yahoo download and EMA/RSI/S/R helpers.
 

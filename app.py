@@ -13,20 +13,20 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-from jindalstel_dss.backtest_engine import run_backtrader
-from jindalstel_dss.config import DSSConfig
-from jindalstel_dss.data import fetch_financials_table, fetch_fundamentals, fetch_ohlcv, resolve_yahoo_ticker
-from jindalstel_dss.indicators import add_indicators
-from jindalstel_dss.research import build_analyst_view
-from jindalstel_dss.signals import analyze_indicator_adherence, generate_signals, simulate_swing_tranche
-from jindalstel_dss.symbols import (
+from backtest_engine import run_backtrader
+from config import DSSConfig
+from data import fetch_financials_table, fetch_fundamentals, fetch_ohlcv, resolve_yahoo_ticker
+from indicators import add_indicators
+from research import build_analyst_view
+from signals import analyze_indicator_adherence, generate_signals, simulate_swing_tranche
+from symbols import (
     default_symbol_index,
     load_nse_equity_symbols,
     normalize_symbol,
     symbol_picker_options,
     universe_for_index,
 )
-from jindalstel_dss.zones import add_zones, latest_zones
+from zones import add_zones, latest_zones
 
 st.set_page_config(
     page_title="NSE Swing DSS",
@@ -73,13 +73,21 @@ def trades_dataframe(swing_bt) -> pd.DataFrame:
 
 def build_price_chart(df: pd.DataFrame, trades, cfg: DSSConfig) -> go.Figure:
     fig = make_subplots(
-        rows=3,
+        rows=4,
         cols=1,
         shared_xaxes=True,
-        vertical_spacing=0.03,
-        row_heights=[0.55, 0.22, 0.23],
-        subplot_titles=("Price · zones · signals", "Volume", "RSI"),
+        vertical_spacing=0.025,
+        row_heights=[0.46, 0.18, 0.18, 0.18],
+        subplot_titles=(
+            f"Price · VWAP {cfg.vwap_period}d · ATR {cfg.atr_period}d bands · zones · signals",
+            "Volume",
+            "RSI",
+            f"ATR ({cfg.atr_period})",
+        ),
     )
+
+    close = df["Close"].astype(float)
+    atr = df["ATR"].astype(float)
 
     fig.add_trace(
         go.Candlestick(
@@ -95,16 +103,55 @@ def build_price_chart(df: pd.DataFrame, trades, cfg: DSSConfig) -> go.Figure:
         row=1,
         col=1,
     )
-    for col, name, color in [
-        ("EMA20", "EMA 20", "#f59e0b"),
-        ("EMA50", "EMA 50", "#3b82f6"),
-        ("VWAP", f"VWAP {cfg.vwap_period}d", "#a855f7"),
+    for col, name, color, width, dash in [
+        ("EMA20", "EMA 20", "#f59e0b", 1.5, None),
+        ("EMA50", "EMA 50", "#3b82f6", 1.5, None),
+        ("VWAP", f"VWAP {cfg.vwap_period}d", "#c084fc", 2.2, "solid"),
     ]:
+        line_style = dict(color=color, width=width)
+        if dash:
+            line_style["dash"] = dash
         fig.add_trace(
-            go.Scatter(x=df.index, y=df[col], mode="lines", name=name, line=dict(color=color, width=1.5)),
+            go.Scatter(
+                x=df.index,
+                y=df[col],
+                mode="lines",
+                name=name,
+                line=line_style,
+            ),
             row=1,
             col=1,
         )
+
+    # ATR envelope around close (±1 ATR) — stop/target context on price panel
+    atr_upper = close + atr
+    atr_lower = close - atr
+    fig.add_trace(
+        go.Scatter(
+            x=df.index,
+            y=atr_upper,
+            mode="lines",
+            name=f"Close + ATR({cfg.atr_period})",
+            line=dict(color="#22d3ee", width=1, dash="dot"),
+            opacity=0.85,
+        ),
+        row=1,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df.index,
+            y=atr_lower,
+            mode="lines",
+            name=f"Close − ATR({cfg.atr_period})",
+            line=dict(color="#22d3ee", width=1, dash="dot"),
+            fill="tonexty",
+            fillcolor="rgba(34,211,238,0.08)",
+            opacity=0.85,
+        ),
+        row=1,
+        col=1,
+    )
 
     # Buy / sell zone bands (latest 60 sessions for clarity)
     tail = df.tail(120)
@@ -215,8 +262,34 @@ def build_price_chart(df: pd.DataFrame, trades, cfg: DSSConfig) -> go.Figure:
     fig.add_hline(y=cfg.rsi_sell_max, line_dash="dot", line_color="#ef4444", row=3, col=1)
     fig.add_hline(y=50, line_dash="dash", line_color="#64748b", row=3, col=1)
 
+    fig.add_trace(
+        go.Scatter(
+            x=df.index,
+            y=df["ATR"],
+            mode="lines",
+            name=f"ATR {cfg.atr_period}",
+            line=dict(color="#22d3ee", width=2),
+            fill="tozeroy",
+            fillcolor="rgba(34,211,238,0.12)",
+        ),
+        row=4,
+        col=1,
+    )
+    last_atr = float(atr.iloc[-1]) if not atr.empty and pd.notna(atr.iloc[-1]) else None
+    if last_atr is not None:
+        fig.add_annotation(
+            xref="x4 domain",
+            yref="y4",
+            x=1.01,
+            y=last_atr,
+            text=f"₹{last_atr:.2f}",
+            showarrow=False,
+            font=dict(color="#22d3ee", size=11),
+            xanchor="left",
+        )
+
     fig.update_layout(
-        height=820,
+        height=920,
         xaxis_rangeslider_visible=False,
         template="plotly_dark",
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
@@ -225,6 +298,7 @@ def build_price_chart(df: pd.DataFrame, trades, cfg: DSSConfig) -> go.Figure:
     fig.update_yaxes(title_text="Price ₹", row=1, col=1)
     fig.update_yaxes(title_text="Volume", row=2, col=1)
     fig.update_yaxes(title_text="RSI", row=3, col=1, range=[20, 85])
+    fig.update_yaxes(title_text="ATR ₹", row=4, col=1)
     return fig
 
 
@@ -327,9 +401,9 @@ def main() -> None:
                 f"Resistance ₹{zones['resistance']:,.2f}"
             )
         st.info(
-            "Green band = buy zone (support / EMA20 / VWAP cluster). "
-            "Red band = sell zone (resistance trim). Triangles = raw signals; "
-            "circles B/S = simulated swing-tranche entries/exits on your configured lot."
+            "Purple **VWAP** line = rolling volume-weighted average. Cyan **ATR bands** = close ± 1 ATR "
+            "(typical swing stop width). Bottom panel = raw ATR (₹). Green/red bands = buy/sell zones. "
+            "Triangles = raw signals; circles B/S = simulated swing-tranche entries/exits."
         )
 
     with tab_research:
