@@ -8,6 +8,8 @@ Run:
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -15,7 +17,7 @@ from plotly.subplots import make_subplots
 
 from backtest_engine import run_backtrader
 from config import DSSConfig
-from data import fetch_financials_table, fetch_fundamentals, fetch_ohlcv, resolve_yahoo_ticker
+from data import IST, fetch_financials_table, fetch_fundamentals, fetch_ohlcv, resolve_yahoo_ticker
 from indicators import add_indicators
 from research import build_analyst_view
 from signals import analyze_indicator_adherence, generate_signals, simulate_swing_tranche
@@ -314,6 +316,21 @@ def main() -> None:
     nse_universe = _load_nse_universe()
 
     with st.sidebar:
+        if st.button(
+            "Refresh data",
+            type="primary",
+            use_container_width=True,
+            help="Fetch latest OHLCV and fundamentals from Yahoo (clears up to 1h cache).",
+        ):
+            load_pipeline.clear()
+            _load_nse_universe.clear()
+            st.session_state["last_data_refresh"] = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S %Z")
+            st.rerun()
+
+        if refreshed := st.session_state.get("last_data_refresh"):
+            st.caption(f"Last refresh: {refreshed}")
+
+        st.divider()
         st.header("Stock")
         index_filter = st.radio(
             "Universe",
