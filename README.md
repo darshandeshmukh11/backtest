@@ -7,6 +7,7 @@ Decision support for swing-trading a **portion** of a delivery holding while kee
 - **3-year OHLCV** + Yahoo Finance fundamentals
 - **Indicators:** EMA 20/50/200, RSI, rolling VWAP, ATR, volume vs 20d average
 - **Buy / sell zones** shaded on the chart (support–resistance + ATR bands)
+- **Realtime mode** — live LTP merged into today's bar for live RSI, zones, and swing signals (auto-refresh)
 - **Historical buy/sell signals** and simulated swing-tranche P&L
 - **Indicator adherence** — which rules the stock tended to follow over the sample
 - **[Backtrader](https://www.backtrader.com/)** capital backtest for independent validation

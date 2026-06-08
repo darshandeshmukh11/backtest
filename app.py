@@ -8,7 +8,7 @@ Run:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -17,10 +17,24 @@ from plotly.subplots import make_subplots
 
 from backtest_engine import run_backtrader
 from config import DSSConfig
-from data import IST, fetch_financials_table, fetch_fundamentals, fetch_ohlcv, resolve_yahoo_ticker
+from data import (
+    IST,
+    fetch_financials_table,
+    fetch_fundamentals,
+    fetch_ohlcv,
+    fetch_ohlcv_live,
+    ist_now,
+    market_session_status,
+    resolve_yahoo_ticker,
+)
 from indicators import add_indicators
 from research import build_analyst_view
-from signals import analyze_indicator_adherence, generate_signals, simulate_swing_tranche
+from signals import (
+    analyze_indicator_adherence,
+    evaluate_live_signal,
+    generate_signals,
+    simulate_swing_tranche,
+)
 from symbols import (
     default_symbol_index,
     load_nse_equity_symbols,
@@ -30,7 +44,7 @@ from symbols import (
 )
 from zones import add_zones, latest_zones
 
-DEPLOY_VERSION = "2026-05-30-self-contained"
+DEPLOY_VERSION = "2026-06-08-realtime"
 
 st.set_page_config(
     page_title="NSE Swing DSS",
@@ -45,9 +59,16 @@ def _load_nse_universe() -> list[str]:
     return load_nse_equity_symbols()
 
 
-@st.cache_data(ttl=3600, show_spinner="Loading market data…")
-def load_pipeline(cfg: DSSConfig) -> tuple[pd.DataFrame, object, object, object, object]:
-    ohlcv = fetch_ohlcv(cfg.symbol, cfg.years)
+@st.cache_data(ttl=120, show_spinner="Loading market data…")
+def load_pipeline(
+    cfg: DSSConfig,
+    refresh_key: int = 0,
+) -> tuple[pd.DataFrame, object, object, object, object, object | None]:
+    if cfg.use_realtime:
+        ohlcv, quote = fetch_ohlcv_live(cfg.symbol, cfg.years)
+    else:
+        ohlcv = fetch_ohlcv(cfg.symbol, cfg.years)
+        quote = None
     fundamentals = fetch_fundamentals(cfg.symbol)
     enriched = add_indicators(ohlcv, cfg)
     enriched = add_zones(enriched, cfg)
@@ -55,7 +76,7 @@ def load_pipeline(cfg: DSSConfig) -> tuple[pd.DataFrame, object, object, object,
     adherence = analyze_indicator_adherence(enriched)
     swing_bt = simulate_swing_tranche(enriched, cfg)
     bt_summary = run_backtrader(enriched, cfg)
-    return enriched, fundamentals, adherence, swing_bt, bt_summary
+    return enriched, fundamentals, adherence, swing_bt, bt_summary, quote
 
 
 def trades_dataframe(swing_bt) -> pd.DataFrame:
@@ -320,10 +341,12 @@ def main() -> None:
             "Refresh data",
             type="primary",
             use_container_width=True,
-            help="Fetch latest OHLCV and fundamentals from Yahoo (clears up to 1h cache).",
+            help="Fetch latest OHLCV and fundamentals from Yahoo (clears cache).",
         ):
             load_pipeline.clear()
             _load_nse_universe.clear()
+            st.session_state["live_refresh_key"] = st.session_state.get("live_refresh_key", 0) + 1
+            st.session_state["live_last_tick"] = ist_now()
             st.session_state["last_data_refresh"] = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S %Z")
             st.rerun()
 
@@ -365,6 +388,27 @@ def main() -> None:
         st.caption(f"Build: `{DEPLOY_VERSION}`")
 
         st.divider()
+        st.subheader("Realtime")
+        use_realtime = st.checkbox(
+            "Realtime (live LTP)",
+            value=True,
+            help="Merge Yahoo LTP into today's bar for live RSI, zones, and signals.",
+        )
+        auto_refresh = st.checkbox(
+            "Auto-refresh LTP",
+            value=use_realtime,
+            disabled=not use_realtime,
+        )
+        refresh_sec = st.slider(
+            "Refresh interval (sec)",
+            30,
+            300,
+            90,
+            15,
+            disabled=not (use_realtime and auto_refresh),
+        )
+
+        st.divider()
         st.header("Parameters")
         cfg = DSSConfig(
             symbol=symbol,
@@ -375,6 +419,7 @@ def main() -> None:
             stop_atr_mult=st.number_input("Stop (× ATR)", 0.5, 3.0, 1.5, 0.1),
             rsi_buy_min=st.number_input("RSI buy floor", 45.0, 60.0, 52.0),
             backtest_cash=st.number_input("Backtrader capital (₹)", 50_000, 5_000_000, 500_000, 50_000),
+            use_realtime=use_realtime,
         )
         st.divider()
         st.markdown(
@@ -384,18 +429,66 @@ def main() -> None:
             f"**Target lot restore:** {cfg.core_holding_qty:,}"
         )
 
+    refresh_key = st.session_state.get("live_refresh_key", 0)
+    if cfg.use_realtime and auto_refresh:
+        last_tick = st.session_state.get("live_last_tick")
+        if last_tick is None or ist_now() - last_tick >= timedelta(seconds=refresh_sec):
+            st.session_state["live_refresh_key"] = refresh_key + 1
+            st.session_state["live_last_tick"] = ist_now()
+            st.rerun()
+
     try:
-        df, fundamentals, adherence, swing_bt, bt_summary = load_pipeline(cfg)
+        df, fundamentals, adherence, swing_bt, bt_summary, quote = load_pipeline(
+            cfg, refresh_key if cfg.use_realtime else 0
+        )
     except Exception as exc:
         st.error(f"Failed to load data: {exc}")
         st.stop()
 
     zones = latest_zones(df)
     last_price = float(df["Close"].iloc[-1])
+    live_state = evaluate_live_signal(df, cfg) if cfg.use_realtime else None
+    session = market_session_status()
+
+    if cfg.use_realtime:
+        if session["is_open"]:
+            st.success(
+                f"**NSE open** · {session['as_of']} · Live LTP drives price, RSI, and zones. "
+                f"Volume filter uses the **last completed session** until today's volume is in."
+            )
+        else:
+            st.info(
+                f"**NSE {session['phase']}** · {session['as_of']} · Live LTP still updates the last bar."
+            )
+
+    if live_state:
+        st.subheader("Live signal")
+        sig_cols = st.columns([2, 1, 1, 1, 1, 1])
+        sig_cols[0].metric("Action", live_state.action, delta=None)
+        sig_cols[1].metric("LTP", f"₹{live_state.live_ltp:,.2f}", f"{live_state.change_pct:+.2f}%")
+        sig_cols[2].metric("RSI", f"{live_state.rsi:.1f}")
+        sig_cols[3].metric("Trend", "Bullish" if live_state.bullish else "Weak")
+        sig_cols[4].metric(
+            "Signal today",
+            "BUY" if live_state.buy_signal_today else ("SELL" if live_state.sell_signal_today else "—"),
+        )
+        sig_cols[5].metric("Updated", live_state.as_of.split(" ")[1])
+        if live_state.buy_ready:
+            st.success("**Swing BUY** — trend + buy zone / dip entry conditions are met on live LTP.")
+        elif live_state.sell_alert:
+            st.warning(f"**Swing SELL / TRIM** — {live_state.action}")
+        else:
+            st.caption(" · ".join(live_state.reasons))
+        if quote:
+            st.caption(
+                f"Yahoo LTP ₹{quote.price:,.2f} · Day H/L ₹{quote.day_high:,.2f} / ₹{quote.day_low:,.2f}"
+                + (f" · Vol {quote.volume:,.0f}" if quote.volume > 0 else "")
+            )
 
     m1, m2, m3, m4, m5, m6 = st.columns(6)
     m1.metric("Symbol", symbol)
-    m2.metric("Last close", f"₹{last_price:,.2f}")
+    price_label = "LTP" if cfg.use_realtime else "Last close"
+    m2.metric(price_label, f"₹{last_price:,.2f}")
     m3.metric("RSI", f"{float(df['RSI'].iloc[-1]):.1f}")
     m4.metric("Swing P&L (sim)", f"₹{swing_bt.total_pnl:+,.0f}")
     m5.metric("Win rate", f"{swing_bt.win_rate:.0f}%")

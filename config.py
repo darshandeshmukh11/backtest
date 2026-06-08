@@ -23,6 +23,7 @@ class DSSConfig:
     zone_atr_mult: float = 0.35
     backtest_cash: float = 500_000.0
     commission: float = 0.001
+    use_realtime: bool = False
 
     @property
     def swing_qty(self) -> int:
