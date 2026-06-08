@@ -54,6 +54,25 @@ st.set_page_config(
 )
 
 
+def _inject_metric_css() -> None:
+    """Prevent st.metric values from truncating with ellipsis on long labels."""
+    st.markdown(
+        """
+        <style>
+        [data-testid="stMetricValue"],
+        [data-testid="stMetricValue"] > div {
+            white-space: normal !important;
+            overflow: visible !important;
+            text-overflow: unset !important;
+            word-break: break-word;
+            line-height: 1.3;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_nse_universe() -> list[str]:
     return load_nse_equity_symbols()
@@ -328,6 +347,7 @@ def build_price_chart(df: pd.DataFrame, trades, cfg: DSSConfig) -> go.Figure:
 
 
 def main() -> None:
+    _inject_metric_css()
     st.title("NSE Swing Trading — Decision Support")
     st.caption(
         "Equity research + technical zones for any **NSE** stock (Yahoo `SYMBOL.NS`). "
@@ -463,16 +483,16 @@ def main() -> None:
 
     if live_state:
         st.subheader("Live signal")
-        sig_cols = st.columns([2, 1, 1, 1, 1, 1])
-        sig_cols[0].metric("Action", live_state.action, delta=None)
-        sig_cols[1].metric("LTP", f"₹{live_state.live_ltp:,.2f}", f"{live_state.change_pct:+.2f}%")
-        sig_cols[2].metric("RSI", f"{live_state.rsi:.1f}")
-        sig_cols[3].metric("Trend", "Bullish" if live_state.bullish else "Weak")
-        sig_cols[4].metric(
+        st.markdown(f"**Action:** {live_state.action}")
+        sig_cols = st.columns(5)
+        sig_cols[0].metric("LTP", f"₹{live_state.live_ltp:,.2f}", f"{live_state.change_pct:+.2f}%")
+        sig_cols[1].metric("RSI", f"{live_state.rsi:.1f}")
+        sig_cols[2].metric("Trend", "Bullish" if live_state.bullish else "Weak")
+        sig_cols[3].metric(
             "Signal today",
             "BUY" if live_state.buy_signal_today else ("SELL" if live_state.sell_signal_today else "—"),
         )
-        sig_cols[5].metric("Updated", live_state.as_of.split(" ")[1])
+        sig_cols[4].metric("Updated", live_state.as_of.split(" ")[1])
         if live_state.buy_ready:
             st.success("**Swing BUY** — trend + buy zone / dip entry conditions are met on live LTP.")
         elif live_state.sell_alert:
@@ -485,7 +505,7 @@ def main() -> None:
                 + (f" · Vol {quote.volume:,.0f}" if quote.volume > 0 else "")
             )
 
-    m1, m2, m3, m4, m5, m6 = st.columns(6)
+    m1, m2, m3, m4, m5, m6 = st.columns([1.4, 1, 1, 1, 1, 1])
     m1.metric("Symbol", symbol)
     price_label = "LTP" if cfg.use_realtime else "Last close"
     m2.metric(price_label, f"₹{last_price:,.2f}")
